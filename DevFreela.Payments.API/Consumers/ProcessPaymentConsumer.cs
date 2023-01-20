@@ -10,6 +10,7 @@ namespace DevFreela.Payments.API.Consumers
     public class ProcessPaymentConsumer : BackgroundService
     {
         private const string QUEUE_NAME = "Payments";
+        private const string PAYMENT_APPROVED_QUEUE = "PaymentsApproved";
         private readonly IConnection _connection;
         private readonly IModel _channel;
         private readonly IServiceProvider _serviceProvider;
@@ -32,6 +33,14 @@ namespace DevFreela.Payments.API.Consumers
                 autoDelete: false,
                 arguments: null
             );
+
+            _channel.QueueDeclare(
+                queue: PAYMENT_APPROVED_QUEUE,
+                durable: false,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null
+            );
         }
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -46,7 +55,18 @@ namespace DevFreela.Payments.API.Consumers
 
                 ProcessPayment(paymentInfo);
 
-                _channel.BasicAck(eventArgs.DeliveryTag, false);
+                var paymentApproved = new PaymentApprovedIntegrationEvent(paymentInfo.IdProject);
+                var paymentApprovedJson = JsonSerializer.Serialize(paymentApproved);
+                var paymentApprovedBytes = Encoding.UTF8.GetBytes(paymentApprovedJson);
+
+                _channel.BasicPublish(
+                    exchange: "",
+                    routingKey: PAYMENT_APPROVED_QUEUE,
+                    basicProperties: null,
+                    body: paymentApprovedBytes
+                );
+
+                _channel.BasicAck(eventArgs.DeliveryTag, false); // ? MARCA QUE A MENSAGEM QUE PEDIA O PAGAMENTO JÁ FOI PROCESSADA
             };
 
             _channel.BasicConsume(QUEUE_NAME, false, consumer);
